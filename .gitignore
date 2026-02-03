@@ -1,0 +1,7 @@
+node_modules/
+downloads/
+*.png
+*.log
+temp_config.json
+chrome-debug-profile/
+.DS_Store

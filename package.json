@@ -1,0 +1,24 @@
+{
+    "name": "grok-playwright-automation",
+    "version": "1.0.0",
+    "description": "Playwright automation for Grok video generation",
+    "main": "grok-automation.js",
+    "type": "module",
+    "scripts": {
+        "start": "node grok-automation.js",
+        "test": "node grok-automation.js --test"
+    },
+    "keywords": [
+        "playwright",
+        "automation",
+        "grok",
+        "video-generation"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "playwright": "^1.40.0",
+        "playwright-extra": "^4.3.6",
+        "puppeteer-extra-plugin-stealth": "^2.11.2"
+    }
+}
