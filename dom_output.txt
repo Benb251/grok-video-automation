@@ -1,0 +1,142 @@
+🔌 Connecting to Chrome on port 9222...
+📍 Using page: https://grok.com/imagine
+
+========== ALL BUTTONS ==========
+
+Found 30 visible buttons:
+
+[Button 0] ""
+  aria-label: "Tìm kiếm"
+  position: x=8, y=61
+
+[Button 1] ""
+  position: x=8, y=796
+
+[Button 2] "Bật/tắt thanh bên"
+  position: x=8, y=840
+
+[Button 3] "Tải lên hình ảnh"
+  aria-label: "Tải lên hình ảnh"
+  position: x=1076, y=13
+
+[Button 4] ""
+  aria-label: "Lưu"
+  position: x=599, y=863
+
+[Button 5] ""
+  aria-label: "Lưu"
+  position: x=599, y=1725
+
+[Button 6] ""
+  aria-label: "Lưu"
+  position: x=893, y=1636
+
+[Button 7] ""
+  aria-label: "Lưu"
+  position: x=599, y=2114
+
+[Button 8] ""
+  aria-label: "Lưu"
+  position: x=305, y=1933
+
+[Button 9] ""
+  aria-label: "Lưu"
+  position: x=893, y=2067
+
+[Button 10] ""
+  aria-label: "Lưu"
+  position: x=893, y=1469
+
+[Button 11] ""
+  aria-label: "Lưu"
+  position: x=1187, y=1898
+
+[Button 12] ""
+  aria-label: "Lưu"
+  position: x=305, y=1731
+
+[Button 13] ""
+  aria-label: "Lưu"
+  position: x=893, y=1302
+
+[Button 14] ""
+  aria-label: "Lưu"
+  position: x=305, y=1300
+
+[Button 15] ""
+  aria-label: "Lưu"
+  position: x=1187, y=1036
+
+[Button 16] ""
+  aria-label: "Lưu"
+  position: x=1187, y=1467
+
+[Button 17] ""
+  aria-label: "Lưu"
+  position: x=599, y=1294
+
+[Button 18] ""
+  aria-label: "Lưu"
+  position: x=599, y=661
+
+[Button 19] ""
+  aria-label: "Lưu"
+  position: x=305, y=869
+
+[Button 20] ""
+  aria-label: "Lưu"
+  position: x=893, y=869
+
+[Button 21] ""
+  aria-label: "Lưu"
+  position: x=1187, y=869
+
+[Button 22] ""
+  aria-label: "Lưu"
+  position: x=305, y=438
+
+[Button 23] ""
+  aria-label: "Lưu"
+  position: x=893, y=438
+
+[Button 24] ""
+  aria-label: "Lưu"
+  position: x=1187, y=438
+
+[Button 25] ""
+  aria-label: "Lưu"
+  position: x=599, y=230
+
+[Button 26] ""
+  aria-label: "Mục yêu thích"
+  position: x=208, y=814
+
+[Button 27] ""
+  aria-label: "Đính kèm"
+  position: x=308, y=827
+
+[Button 28] "Hình ảnh"
+  aria-label: "Chọn mô hình"
+  position: x=906, y=827
+
+[Button 29] ""
+  aria-label: "Gửi"
+  position: x=1048, y=827
+
+
+========== INPUT AREAS ==========
+
+Found 1 input areas:
+
+[Input 0]
+  tag: DIV
+  visible: true
+
+
+========== FILE INPUTS ==========
+
+Found 1 file inputs:
+
+[FileInput 0]
+  accept: image/*
+  hidden: true

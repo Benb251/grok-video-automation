@@ -143,6 +143,12 @@ export class AutomationService {
         this.isRunning = true;
         const scenes = parseScriptFile(scriptPath);
 
+        // Derive output folder from project root (parent of images folder)
+        const projectRoot = path.dirname(imagesFolder);
+        this.config.outputFolder = projectRoot;
+        this.log(`📂 Project Root: ${projectRoot}`);
+        this.log(`📂 Output Video Folder: ${path.join(projectRoot, 'video')}`);
+
         // Filter out completed ones if check enabled (skipped for simplicity, can add later)
         const pendingScenes = scenes.filter(s => !s.isDone);
 
@@ -175,6 +181,7 @@ export class AutomationService {
                     const files = fs.readdirSync(imagesFolder);
                     const match = files.find(f => {
                         const num = f.match(/\d+/);
+                        // Ensure we match "1.png", "scene_1.jpg" etc, but strictly link number to scene
                         return num && parseInt(num[0]) === scene.sceneNumber;
                     });
                     if (match) imagePath = path.join(imagesFolder, match);
@@ -190,6 +197,8 @@ export class AutomationService {
 
                     try {
                         const tempDownloadDir = await this.runAutomation(account, scene, imagePath);
+
+                        // Move from temp to project "video" folder
                         const videoPath = this.findAndMoveVideo(scene.sceneNumber, this.config.outputFolder, tempDownloadDir);
 
                         // Cleanup
@@ -204,10 +213,11 @@ export class AutomationService {
                             stats.pending--;
                             this.onProgress({ ...stats });
                             this.log(`✅ [Worker ${account.id}] Scene ${scene.sceneNumber} Complete`);
+                            this.log(`   Saved to: ${videoPath}`);
                             this.onWorkerUpdate({ id: account.id, status: 'idle', currentScene: null }); // Idle after done
                             success = true;
                         } else {
-                            throw new Error('Video not found');
+                            throw new Error('Video not found in temp folder');
                         }
                     } catch (error: any) {
                         attempts++;
@@ -322,8 +332,10 @@ export class AutomationService {
         if (files.length === 0) return null;
 
         const video = files[0]; // Should only be one
-        const newName = `scene_${String(sceneNumber).padStart(3, '0')}_${Date.now()}.mp4`;
-        const targetDir = path.join(outputFolder, 'videos');
+        const newName = `scene_${String(sceneNumber).padStart(3, '0')}.mp4`; // Simplified name
+
+        // Use "video" folder (Singular to match user structure)
+        const targetDir = path.join(outputFolder, 'video');
 
         if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
@@ -331,9 +343,11 @@ export class AutomationService {
         const targetPath = path.join(targetDir, newName);
 
         try {
+            // If exists, overwrite or rename? Let's overwrite for now to be simple
             fs.copyFileSync(sourcePath, targetPath);
             return targetPath;
         } catch (e) {
+            this.log(`❌ Error moving video: ${e}`);
             return null;
         }
     }
