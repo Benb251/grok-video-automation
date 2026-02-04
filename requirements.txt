@@ -1,0 +1,6 @@
+# Python GUI requirements
+# Tkinter is included with Python by default, no additional packages needed for the GUI
+
+# Optional: If you want to add more features later
+# pillow>=10.0.0  # For image handling
+# requests>=2.31.0  # For API calls

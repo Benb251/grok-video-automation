@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Storyboard - Batch Generation Results</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: #16213e;
+            padding: 15px 30px;
+            border-radius: 10px;
+            border: 1px solid #0f3460;
+        }
+
+        .stat-card .label {
+            font-size: 0.9em;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .storyboard {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .scene-card {
+            background: #16213e;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #0f3460;
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .scene-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+
+        .scene-card.completed {
+            border-color: #4caf50;
+        }
+
+        .scene-card.failed {
+            border-color: #f44336;
+        }
+
+        .scene-card.pending {
+            border-color: #ff9800;
+            opacity: 0.6;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%;
+            /* 16:9 */
+            background: #000;
+        }
+
+        .video-container video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-container .placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0a0e27;
+            color: #666;
+        }
+
+        .scene-info {
+            padding: 15px;
+        }
+
+        .scene-number {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .scene-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .scene-status.completed {
+            background: #4caf50;
+            color: white;
+        }
+
+        .scene-status.failed {
+            background: #f44336;
+            color: white;
+        }
+
+        .scene-status.pending {
+            background: #ff9800;
+            color: white;
+        }
+
+        .scene-prompt {
+            font-size: 0.85em;
+            color: #ccc;
+            line-height: 1.4;
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+        }
+
+        .scene-metadata {
+            margin-top: 10px;
+            font-size: 0.75em;
+            color: #888;
+        }
+
+        .scene-metadata div {
+            margin: 3px 0;
+        }
+
+        @media (max-width: 1200px) {
+            .storyboard {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .storyboard {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .storyboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-close {
+            float: right;
+            font-size: 2em;
+            cursor: pointer;
+            color: #667eea;
+        }
+
+        .modal video {
+            width: 100%;
+            max-height: 500px;
+            margin: 20px 0;
+        }
+
+        .modal-prompt {
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🎬 Video Storyboard</h1>
+        <p>Batch Generation Results</p>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="label">Total Scenes</div>
+            <div class="value" id="stat-total">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Completed</div>
+            <div class="value" id="stat-completed" style="color: #4caf50;">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Failed</div>
+            <div class="value" id="stat-failed" style="color: #f44336;">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Pending</div>
+            <div class="value" id="stat-pending" style="color: #ff9800;">0</div>
+        </div>
+    </div>
+
+    <div class="storyboard" id="storyboard">
+        <!-- Scene cards will be inserted here -->
+    </div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+        // This will be populated by the batch processor
+        let scenesData = [];
+
+        // Load data from JSON file
+        async function loadData() {
+            try {
+                const response = await fetch('batch-report.json');
+                const data = await response.json();
+                scenesData = data.scenes || [];
+                updateStats(data.stats);
+                renderStoryboard();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                // Generate sample data for testing
+                generateSampleData();
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('stat-total').textContent = stats.total || 0;
+            document.getElementById('stat-completed').textContent = stats.completed || 0;
+            document.getElementById('stat-failed').textContent = stats.failed || 0;
+            document.getElementById('stat-pending').textContent = stats.pending || 0;
+        }
+
+        function renderStoryboard() {
+            const container = document.getElementById('storyboard');
+            container.innerHTML = '';
+
+            scenesData.forEach(scene => {
+                const card = createSceneCard(scene);
+                container.appendChild(card);
+            });
+        }
+
+        function createSceneCard(scene) {
+            const card = document.createElement('div');
+            card.className = `scene-card ${scene.status}`;
+            card.onclick = () => openModal(scene);
+
+            const statusClass = scene.status || 'pending';
+            const statusText = {
+                'completed': '✅ Completed',
+                'failed': '❌ Failed',
+                'pending': '⏳ Pending'
+            }[statusClass] || 'Unknown';
+
+            card.innerHTML = `
+                <div class="video-container">
+                    ${scene.videoPath ?
+                    `<video src="${scene.videoPath}" preload="metadata"></video>` :
+                    `<div class="placeholder">🎬 No Video</div>`
+                }
+                </div>
+                <div class="scene-info">
+                    <div class="scene-number">Scene ${scene.sceneNumber}</div>
+                    <div class="scene-status ${statusClass}">${statusText}</div>
+                    <div class="scene-prompt">${scene.prompt || 'No prompt'}</div>
+                    <div class="scene-metadata">
+                        <div>⏱️ ${scene.duration || '6s'} | 📐 ${scene.resolution || '720p'}</div>
+                    </div>
+                </div>
+            `;
+
+            return card;
+        }
+
+        function openModal(scene) {
+            const modal = document.getElementById('modal');
+            const body = document.getElementById('modal-body');
+
+            body.innerHTML = `
+                <h2>Scene ${scene.sceneNumber}</h2>
+                ${scene.videoPath ?
+                    `<video src="${scene.videoPath}" controls autoplay></video>` :
+                    `<div style="padding: 50px; text-align: center; background: #0a0e27; border-radius: 10px;">
+                        <p>🎬 Video not available</p>
+                        ${scene.status === 'failed' ? `<p style="color: #f44336;">Error: ${scene.error || 'Generation failed'}</p>` : ''}
+                    </div>`
+                }
+                <div class="modal-prompt">
+                    <h3>Prompt:</h3>
+                    <p>${scene.prompt || 'No prompt'}</p>
+                </div>
+                <div class="modal-prompt">
+                    <h3>Metadata:</h3>
+                    <p><strong>Lighting:</strong> ${scene.lighting || 'N/A'}</p>
+                    <p><strong>Camera:</strong> ${scene.camera || 'N/A'}</p>
+                    <p><strong>Environment:</strong> ${scene.environment || 'N/A'}</p>
+                </div>
+            `;
+
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        // Close modal on background click
+        document.getElementById('modal').onclick = function (e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        };
+
+        // Generate sample data for testing
+        function generateSampleData() {
+            scenesData = [];
+            for (let i = 1; i <= 20; i++) {
+                scenesData.push({
+                    sceneNumber: i,
+                    status: i <= 15 ? 'completed' : (i <= 18 ? 'pending' : 'failed'),
+                    prompt: `Photorealistic rural documentary scene ${i} with amazing details...`,
+                    videoPath: i <= 15 ? `videos/scene_${String(i).padStart(3, '0')}.mp4` : null,
+                    duration: '6s',
+                    resolution: '720p',
+                    lighting: 'soft morning sunlight',
+                    camera: 'Wide shot, static',
+                    environment: 'English countryside'
+                });
+            }
+
+            updateStats({
+                total: 20,
+                completed: 15,
+                pending: 3,
+                failed: 2
+            });
+
+            renderStoryboard();
+        }
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+
+</html>
