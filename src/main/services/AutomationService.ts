@@ -153,21 +153,53 @@ export class AutomationService {
         this.log(`📂 Project Root: ${projectRoot}`);
         this.log(`📂 Output Video Folder: ${path.join(projectRoot, 'video')}`);
 
-        // Filter out completed ones if check enabled (skipped for simplicity, can add later)
-        const pendingScenes = scenes.filter(s => !s.isDone);
+        // SMART RESUME: Check for existing videos
+        const videoFolder = path.join(projectRoot, 'video');
+        const totalScenes = scenes.length;
+        let completedCount = 0;
 
-        this.log(`📊 Starting batch: ${pendingScenes.length} scenes pending`);
+        // Clone scenes to avoid mutating cached ones if any
+        const allScenes = scenes.map(s => ({ ...s }));
+
+        const queue: Scene[] = [];
+
+        for (const scene of allScenes) {
+            const videoName = `scene_${String(scene.sceneNumber).padStart(3, '0')}.mp4`;
+            const videoPath = path.join(videoFolder, videoName);
+
+            if (fs.existsSync(videoPath)) {
+                // Mark as done
+                scene.isDone = true;
+                scene.videoPath = videoPath;
+                scene.status = 'completed'; // For UI consistency
+                completedCount++;
+
+                // Notify UI immediately so it turns green
+                // We delay slightly to ensure stats are init
+                setTimeout(() => {
+                    this.onProgress({
+                        updatedScene: {
+                            sceneNumber: scene.sceneNumber,
+                            status: 'completed',
+                            videoPath: videoPath
+                        }
+                    });
+                }, 100);
+            } else {
+                queue.push(scene);
+            }
+        }
+
+        this.log(`📊 Smart Resume: Found ${completedCount} completed, ${queue.length} pending.`);
 
         // Initialize stats
         const stats = {
-            total: scenes.length,
-            completed: scenes.filter(s => s.isDone).length,
+            total: totalScenes,
+            completed: completedCount,
             failed: 0,
-            pending: pendingScenes.length
+            pending: queue.length
         };
         this.onProgress(stats);
-
-        const queue = [...pendingScenes];
 
         const processWorker = async (account: WorkerAccount) => {
             while (queue.length > 0 && this.isRunning) {

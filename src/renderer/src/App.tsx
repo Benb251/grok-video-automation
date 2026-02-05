@@ -45,6 +45,49 @@ function App() {
     scenes: []
   });
 
+  // State for collapsible logs
+  const [isLogsOpen, setIsLogsOpen] = useState(false);
+
+  // Persistence: Load settings on mount
+  useEffect(() => {
+    try {
+      const savedConfig = localStorage.getItem('grok_config');
+      const savedPaths = localStorage.getItem('grok_paths');
+
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        setState(prev => ({ ...prev, config: { ...prev.config, ...parsed } }));
+      }
+      if (savedPaths) {
+        const parsed = JSON.parse(savedPaths);
+        setState(prev => ({
+          ...prev,
+          projectPath: parsed.projectPath || '',
+          accountsPath: parsed.accountsPath || ''
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load settings', e);
+    }
+  }, []);
+
+  // Persistence: Save config on change
+  useEffect(() => {
+    localStorage.setItem('grok_config', JSON.stringify({
+      duration: state.config.duration,
+      resolution: state.config.resolution,
+      maxConcurrent: state.config.maxConcurrent
+    }));
+  }, [state.config.duration, state.config.resolution, state.config.maxConcurrent]);
+
+  // Persistence: Save paths on change
+  useEffect(() => {
+    localStorage.setItem('grok_paths', JSON.stringify({
+      projectPath: state.projectPath,
+      accountsPath: state.accountsPath
+    }));
+  }, [state.projectPath, state.accountsPath]);
+
   // Setup Listeners
   useEffect(() => {
     window.api.automation.onLog((msg) => {
@@ -139,21 +182,16 @@ function App() {
 
   return (
     <MainLayout currentView={currentView} onViewChange={setCurrentView}>
-      <div className="flex h-full gap-6 max-w-[98vw] mx-auto">
+      <div className="flex h-full gap-6 max-w-[98vw] mx-auto overflow-hidden">
 
-        {/* LEFT COLUMN: Settings & Controls (350px fixed or 25%) */}
-        <div className="w-[350px] flex-shrink-0 flex flex-col">
+        {/* LEFT COLUMN: Settings & Controls (300px fixed) */}
+        <div className="w-[300px] flex-shrink-0 flex flex-col">
           <ConfigurationPanel
             projectPath={state.projectPath}
             onProjectSelect={(path) => {
-              // Auto-detect accounts only if it looks like a parent folder, 
-              // but better to just set project path and let user select accounts separately
-              // or just clear it to avoid "accounts\accounts" duplication.
               setState(prev => ({
                 ...prev,
                 projectPath: path,
-                // Don't auto-guess accounts path to avoid "C:\...\accounts\accounts" error
-                // unless we verify it exists. For now, keep it simple.
               }));
             }}
             accountsPath={state.accountsPath}
@@ -163,45 +201,59 @@ function App() {
             isRunning={state.isRunning}
             onStart={handleStart}
             onStop={handleStop}
-            className="bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 p-6 flex-1 shadow-2xl"
+            className="bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 p-6 flex-1 shadow-2xl overflow-y-auto"
           />
         </div>
 
         {/* RIGHT COLUMN: Storyboard & Visualization */}
-        <div className="flex-1 flex flex-col gap-6 min-w-0">
-          {/* Stats Bar */}
-          <div className="grid grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-black/20 border border-white/10 backdrop-blur-md">
-              <div className="text-gray-500 text-xs uppercase font-bold tracking-wider mb-1">Total</div>
-              <div className="text-2xl font-mono text-white">{state.stats.total}</div>
+        <div className="flex-1 flex flex-col gap-4 min-w-0 h-full">
+          {/* Stats Bar - Compact- */}
+          <div className="flex gap-4">
+            <div className="flex-1 px-4 py-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md flex items-center justify-between">
+              <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Total</span>
+              <span className="text-xl font-mono text-white leading-none">{state.stats.total}</span>
             </div>
-            <div className="p-4 rounded-xl bg-black/20 border border-white/10 backdrop-blur-md">
-              <div className="text-gray-500 text-xs uppercase font-bold tracking-wider mb-1">Completed</div>
-              <div className="text-2xl font-mono text-green-400">{state.stats.completed}</div>
+            <div className="flex-1 px-4 py-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md flex items-center justify-between">
+              <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Done</span>
+              <span className="text-xl font-mono text-green-400 leading-none">{state.stats.completed}</span>
             </div>
-            <div className="p-4 rounded-xl bg-black/20 border border-white/10 backdrop-blur-md">
-              <div className="text-gray-500 text-xs uppercase font-bold tracking-wider mb-1">Pending</div>
-              <div className="text-2xl font-mono text-amber-400">{state.stats.pending}</div>
+            <div className="flex-1 px-4 py-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md flex items-center justify-between">
+              <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Pending</span>
+              <span className="text-xl font-mono text-amber-400 leading-none">{state.stats.pending}</span>
             </div>
-            <div className="p-4 rounded-xl bg-black/20 border border-white/10 backdrop-blur-md">
-              <div className="text-gray-500 text-xs uppercase font-bold tracking-wider mb-1">Failed</div>
-              <div className="text-2xl font-mono text-red-400">{state.stats.failed}</div>
+            <div className="flex-1 px-4 py-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md flex items-center justify-between">
+              <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Failed</span>
+              <span className="text-xl font-mono text-red-400 leading-none">{state.stats.failed}</span>
             </div>
           </div>
 
-          {/* Storyboard / Worker Grid */}
-          <div className="flex-1 bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 p-6 shadow-xl overflow-hidden flex flex-col">
+          {/* Storyboard / Worker Grid - Main Focus */}
+          <div className="flex-1 bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 p-4 shadow-xl overflow-hidden flex flex-col min-h-0">
             <Storyboard
               scenes={state.scenes}
               workers={state.workers}
               stats={state.stats}
-              className="flex-1"
+              className="flex-1 min-h-0"
             />
           </div>
 
-          {/* Log Terminal (Collapsible or Fixed Height at bottom) */}
-          <div className="h-[200px] flex-shrink-0">
-            <LogTerminal logs={state.logs} className="h-full shadow-lg" />
+          {/* Log Terminal (Collapsible) */}
+          <div className={`flex-shrink-0 transition-all duration-300 ease-in-out border border-white/10 rounded-xl bg-black/30 overflow-hidden ${isLogsOpen ? 'h-[200px]' : 'h-[36px]'}`}>
+            <div
+              className="h-[36px] px-4 flex items-center justify-between cursor-pointer hover:bg-white/5"
+              onClick={() => setIsLogsOpen(!isLogsOpen)}
+            >
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${state.logs.length > 0 && state.logs[state.logs.length - 1].includes('Error') ? 'bg-red-500' : 'bg-green-500'}`}></span>
+                System Logs
+              </span>
+              <button className="text-gray-400 hover:text-white">
+                {isLogsOpen ? '▼' : '▲'}
+              </button>
+            </div>
+            <div className="h-[calc(200px-36px)]">
+              <LogTerminal logs={state.logs} className="h-full border-t border-white/5" />
+            </div>
           </div>
         </div>
 

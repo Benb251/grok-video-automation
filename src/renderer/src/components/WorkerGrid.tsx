@@ -19,52 +19,40 @@ export function WorkerGrid({ workers, className }: WorkerGridProps) {
     if (workers.length === 0) return null;
 
     return (
-        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4", className)}>
+        <div className={cn("flex flex-wrap gap-2", className)}>
             {workers.map((worker) => (
                 <div
                     key={worker.id}
                     className={cn(
-                        "relative p-4 rounded-xl border backdrop-blur-sm transition-all duration-300",
-                        worker.status === 'working' ? "bg-amber-500/10 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]" :
+                        "relative px-3 py-2 rounded-lg border backdrop-blur-sm transition-all duration-300 flex items-center gap-3 min-w-[200px]",
+                        worker.status === 'working' ? "bg-amber-500/10 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]" :
                             worker.status === 'error' ? "bg-red-500/10 border-red-500/30" :
                                 worker.status === 'retrying' ? "bg-orange-500/10 border-orange-500/30" :
                                     "bg-white/5 border-white/10"
                     )}
                 >
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <div className={cn(
-                                "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs",
-                                worker.status === 'working' ? "bg-amber-500 text-black" :
-                                    "bg-white/10 text-gray-400"
-                            )}>
-                                {worker.id}
-                            </div>
-                            <span className="text-sm font-medium text-gray-300">Worker Node</span>
-                        </div>
-
-                        {worker.status === 'working' && <Loader2 size={16} className="text-amber-400 animate-spin" />}
-                        {worker.status === 'idle' && <Cpu size={16} className="text-gray-600" />}
-                        {worker.status === 'error' && <AlertCircle size={16} className="text-red-400" />}
+                    {/* Status Icon */}
+                    <div className={cn(
+                        "w-6 h-6 rounded flex items-center justify-center font-bold text-[10px]",
+                        worker.status === 'working' ? "bg-amber-500 text-black" :
+                            "bg-white/10 text-gray-400"
+                    )}>
+                        {worker.id}
                     </div>
 
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Status</span>
-                            <span className={cn(
-                                "font-bold uppercase",
-                                worker.status === 'working' ? "text-amber-400" :
-                                    worker.status === 'error' ? "text-red-400" :
-                                        "text-gray-500"
-                            )}>
-                                {worker.status}
-                            </span>
+                    {/* Middle Info */}
+                    <div className="flex-1 flex flex-col justify-center">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Worker Node</span>
+                            {worker.status === 'working' && <Loader2 size={10} className="text-amber-400 animate-spin" />}
                         </div>
-
                         {worker.currentScene && (
-                            <div className="bg-black/30 rounded-lg p-2 text-xs font-mono text-center border border-white/5">
-                                Processing Scene <span className="text-white font-bold">{worker.currentScene}</span>
-                            </div>
+                            <span className="text-xs font-mono text-gray-200">
+                                Scene <span className="font-bold text-white">{worker.currentScene}</span>
+                            </span>
+                        )}
+                        {!worker.currentScene && (
+                            <span className="text-[10px] text-gray-500 capitalize">{worker.status}</span>
                         )}
                     </div>
                 </div>

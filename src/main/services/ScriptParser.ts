@@ -10,6 +10,11 @@ export interface Scene {
     voice?: string;
     sound?: string;
     music?: string;
+    status?: 'pending' | 'generating' | 'completed' | 'failed';
+    videoPath?: string;
+    imagePath?: string;
+    error?: string;
+    workerId?: number;
 }
 
 export function parseScriptFile(scriptPath: string): Scene[] {

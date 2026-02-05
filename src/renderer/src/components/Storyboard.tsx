@@ -16,6 +16,7 @@ interface Scene {
 interface StoryboardProps {
     scenes: Scene[];
     workers: any[];
+    stats: any;
     className?: string;
 }
 
@@ -32,14 +33,16 @@ export function Storyboard({ scenes, workers, className }: StoryboardProps) {
     });
 
     return (
-        <div className={cn("flex flex-col h-full gap-6", className)}>
-            {/* Top: Active Workers */}
-            <section>
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <Clock size={14} className="animate-pulse text-amber-500" /> Active Processes
-                </h3>
-                <WorkerGrid workers={workers} />
-            </section>
+        <div className={cn("flex flex-col h-full gap-4", className)}>
+            {/* Top: Active Workers (Compact) */}
+            {workers.length > 0 && (
+                <section className="flex-shrink-0">
+                    <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <Clock size={12} className="animate-pulse text-amber-500" /> Active Processes
+                    </h3>
+                    <WorkerGrid workers={workers} />
+                </section>
+            )}
 
             {/* Bottom: Scene List / Gallery */}
             <section className="flex-1 flex flex-col min-h-0">
