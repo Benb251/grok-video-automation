@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
   "author": "example.com",
@@ -13,7 +13,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "transpile:script": "esbuild src/main/resources/grok-automation.js --format=cjs --platform=node --packages=external --outfile=src/main/resources/grok-automation.cjs",
+    "build": "npm run typecheck && npm run transpile:script && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",

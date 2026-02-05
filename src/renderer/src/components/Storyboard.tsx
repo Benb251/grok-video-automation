@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Film, CheckCircle2, Clock, AlertCircle, Loader2, PlayCircle, Image as ImageIcon, X } from 'lucide-react';
+import { useState } from 'react';
+import { Film, CheckCircle2, Clock, AlertCircle, Loader2, PlayCircle, Image as ImageIcon, X, Pencil, RotateCw, Save } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { WorkerGrid } from './WorkerGrid';
 
@@ -18,11 +18,15 @@ interface StoryboardProps {
     workers: any[];
     stats: any;
     className?: string;
+    onEdit?: (scene: Scene, newPrompt: string) => void;
+    onRetry?: (scene: Scene) => void;
 }
 
-export function Storyboard({ scenes, workers, className }: StoryboardProps) {
+export function Storyboard({ scenes, workers, className, onEdit, onRetry }: StoryboardProps) {
     const [filter, setFilter] = useState<'all' | 'completed' | 'pending' | 'failed'>('all');
     const [selectedVideo, setSelectedVideo] = useState<Scene | null>(null);
+    const [editingScene, setEditingScene] = useState<Scene | null>(null);
+    const [editPrompt, setEditPrompt] = useState('');
 
     const filteredScenes = scenes.filter(s => {
         if (filter === 'all') return true;
@@ -84,6 +88,11 @@ export function Storyboard({ scenes, workers, className }: StoryboardProps) {
                                             setSelectedVideo(s);
                                         }
                                     }}
+                                    onEdit={(s) => {
+                                        setEditingScene(s);
+                                        setEditPrompt(s.prompt);
+                                    }}
+                                    onRetry={(s) => onRetry?.(s)}
                                 />
                             ))}
                         </div>
@@ -115,14 +124,63 @@ export function Storyboard({ scenes, workers, className }: StoryboardProps) {
                                 {selectedVideo.prompt}
                             </p>
                         </div>
-                    </div>
-                </div>
+                    </div >
+                </div >
             )}
-        </div>
+
+            {/* Edit Prompt Modal */}
+            {
+                editingScene && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+                        <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Pencil size={18} className="text-amber-500" />
+                                    Edit Prompt: Scene {editingScene.sceneNumber}
+                                </h3>
+                                <button onClick={() => setEditingScene(null)} className="text-gray-400 hover:text-white p-2">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="p-6 flex-1 overflow-y-auto">
+                                <textarea
+                                    value={editPrompt}
+                                    onChange={(e) => setEditPrompt(e.target.value)}
+                                    className="w-full h-[300px] bg-black/30 border border-white/10 rounded-xl p-4 text-gray-200 text-sm font-mono focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none resize-none leading-relaxed"
+                                    placeholder="Edit scene prompt and metadata..."
+                                />
+                                <p className="mt-2 text-xs text-gray-500">
+                                    Tip: Ensure you keep the format cleaner for better parsing, but you can edit any text here.
+                                </p>
+                            </div>
+
+                            <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+                                <button
+                                    onClick={() => setEditingScene(null)}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onEdit?.(editingScene, editPrompt);
+                                        setEditingScene(null);
+                                    }}
+                                    className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-500 text-black hover:bg-amber-400 transition-colors flex items-center gap-2"
+                                >
+                                    <Save size={16} /> Save Changes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 }
 
-function SceneCard({ scene, onClick }: { scene: Scene, onClick: (s: Scene) => void }) {
+function SceneCard({ scene, onClick, onEdit, onRetry }: { scene: Scene, onClick: (s: Scene) => void, onEdit: (s: Scene) => void, onRetry: (s: Scene) => void }) {
     const statusColor = {
         pending: 'border-white/10 bg-white/5',
         generating: 'border-amber-500/50 bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.1)]',
@@ -173,9 +231,27 @@ function SceneCard({ scene, onClick }: { scene: Scene, onClick: (s: Scene) => vo
                     Scene {scene.sceneNumber}
                 </span>
 
-                {scene.status === 'generating' && <Loader2 size={16} className="text-amber-500 animate-spin drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />}
-                {scene.status === 'completed' && <CheckCircle2 size={16} className="text-green-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />}
-                {scene.status === 'failed' && <AlertCircle size={16} className="text-red-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />}
+                <div className="flex gap-2 pointer-events-auto">
+                    {/* Action Buttons (Visible on Hover or status) */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onEdit(scene); }}
+                        className="p-1.5 rounded-md bg-black/40 hover:bg-white/20 text-gray-300 hover:text-white backdrop-blur-md transition-all opacity-0 group-hover:opacity-100"
+                        title="Edit Prompt"
+                    >
+                        <Pencil size={12} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onRetry(scene); }}
+                        className="p-1.5 rounded-md bg-black/40 hover:bg-white/20 text-gray-300 hover:text-white backdrop-blur-md transition-all opacity-0 group-hover:opacity-100"
+                        title="Regenerate Scene"
+                    >
+                        <RotateCw size={12} />
+                    </button>
+
+                    {scene.status === 'generating' && <Loader2 size={16} className="text-amber-500 animate-spin drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />}
+                    {scene.status === 'completed' && <CheckCircle2 size={16} className="text-green-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />}
+                    {scene.status === 'failed' && <AlertCircle size={16} className="text-red-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />}
+                </div>
             </div>
 
             {/* Centered Content / Icons */}

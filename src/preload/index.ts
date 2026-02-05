@@ -7,6 +7,8 @@ const api = {
     init: (accountsFolder: string, config: any) => ipcRenderer.invoke('automation:init', accountsFolder, config),
     scanProject: (projectPath: string) => ipcRenderer.invoke('automation:scanProject', projectPath),
     start: (scriptPath: string, imagesFolder: string) => ipcRenderer.invoke('automation:start', scriptPath, imagesFolder),
+    updatePrompt: (scriptPath: string, sceneNumber: number, newPrompt: string) => ipcRenderer.invoke('automation:updatePrompt', scriptPath, sceneNumber, newPrompt),
+    retry: (scriptPath: string, imagesFolder: string, sceneNumbers: number[]) => ipcRenderer.invoke('automation:retry', scriptPath, imagesFolder, sceneNumbers),
     stop: () => ipcRenderer.invoke('automation:stop'),
     onLog: (callback: (msg: string) => void) => ipcRenderer.on('automation:log', (_, msg) => callback(msg)),
     onProgress: (callback: (data: any) => void) => ipcRenderer.on('automation:progress', (_, data) => callback(data)),

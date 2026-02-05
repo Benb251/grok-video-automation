@@ -3,7 +3,9 @@ import { join } from 'path'
 import icon from '../../resources/icon.png?asset'
 
 import { AutomationService } from './services/AutomationService'
-import { parseScriptFile } from './services/ScriptParser'
+import { parseScriptFile, updateScriptScene } from './services/ScriptParser'
+import path from 'path'
+import fs from 'fs'
 
 // Inline implementation to avoid @electron-toolkit/utils initialization bug
 const isDev = !app.isPackaged
@@ -84,16 +86,14 @@ app.whenReady().then(() => {
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
+  // Default open or close DevTools by F12
   app.on('browser-window-created', (_, window) => {
-    if (isDev) {
-      // Enable F12 to open DevTools in development
-      window.webContents.on('before-input-event', (event, input) => {
-        if (input.key === 'F12') {
-          window.webContents.toggleDevTools()
-          event.preventDefault()
-        }
-      })
-    }
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12') {
+        window.webContents.toggleDevTools()
+        event.preventDefault()
+      }
+    })
   })
 
   // IPC test
@@ -164,6 +164,32 @@ app.whenReady().then(() => {
   ipcMain.handle('automation:start', async (_, scriptPath, imagesFolder) => {
     if (!automationService) throw new Error('Service not initialized');
     automationService.startBatch(scriptPath, imagesFolder).catch(err => {
+      mainWindow?.webContents.send('automation:error', err.message);
+    });
+    return true;
+  });
+
+  ipcMain.handle('automation:updatePrompt', async (_, projectPath, sceneNumber, newPrompt) => {
+    // Logic to find the script file in the directory
+    if (fs.existsSync(projectPath) && fs.statSync(projectPath).isDirectory()) {
+      const files = fs.readdirSync(projectPath);
+      const scriptFile = files.find(f => f.endsWith('.txt'));
+      if (scriptFile) {
+        const fullScriptPath = path.join(projectPath, scriptFile);
+        return updateScriptScene(fullScriptPath, sceneNumber, newPrompt);
+      }
+    }
+    // Fallback: If it's already a file path (or failed to find), try directly
+    return updateScriptScene(projectPath, sceneNumber, newPrompt);
+  });
+
+  ipcMain.handle('automation:retry', async (_, scriptPath, imagesFolder, sceneNumbers) => {
+    if (!automationService) throw new Error('Service not initialized');
+    // Force retry for specific scenes
+    automationService.startBatch(scriptPath, imagesFolder, {
+      specificScenes: sceneNumbers,
+      force: true
+    }).catch(err => {
       mainWindow?.webContents.send('automation:error', err.message);
     });
     return true;

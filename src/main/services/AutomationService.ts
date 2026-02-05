@@ -143,7 +143,24 @@ export class AutomationService {
         await new Promise(r => setTimeout(r, 4000));
     }
 
-    async startBatch(scriptPath: string, imagesFolder: string) {
+    async startBatch(scriptPath: string, imagesFolder: string, options?: { specificScenes?: number[], force?: boolean }) {
+        // Ensure service is initialized and workers are running
+        if (this.accounts.length === 0) {
+            this.log('⚠️ Service not initialized, attempting to initialize...');
+            if (!this.accountsFolder) throw new Error('Accounts folder not set. Please initialize first.');
+            await this.initialize();
+        } else {
+            // If initialized but stopped (no processes), relaunch
+            // Check if any process is actually running (simple check if array is empty or processes killed)
+            // Since we don't track exit codes robustly, we'll check if chromeProcesses array is empty
+            if (this.chromeProcesses.length === 0) {
+                this.log('🔄 Workers stopped. Relaunching Chrome...');
+                this.isRunning = false; // Reset flag to ensure clean state
+                // Assume config is already set from previous init
+                await this.launchAllChrome();
+            }
+        }
+
         this.isRunning = true;
         const scenes = parseScriptFile(scriptPath);
 
@@ -164,10 +181,17 @@ export class AutomationService {
         const queue: Scene[] = [];
 
         for (const scene of allScenes) {
+            // Filter specific scenes if requested
+            if (options?.specificScenes && !options.specificScenes.includes(scene.sceneNumber)) {
+                continue; // Skip scenes not in the list
+            }
+
             const videoName = `scene_${String(scene.sceneNumber).padStart(3, '0')}.mp4`;
             const videoPath = path.join(videoFolder, videoName);
 
-            if (fs.existsSync(videoPath)) {
+            // If forced, we ignore existing video (and maybe overwrite it later)
+            // If NOT forced, we check existence
+            if (!options?.force && fs.existsSync(videoPath)) {
                 // Mark as done
                 scene.isDone = true;
                 scene.videoPath = videoPath;
@@ -190,7 +214,7 @@ export class AutomationService {
             }
         }
 
-        this.log(`📊 Smart Resume: Found ${completedCount} completed, ${queue.length} pending.`);
+        this.log(`📊 Batch/Retry: Found ${completedCount} completed (skipped), ${queue.length} scenes to process.`);
 
         // Initialize stats
         const stats = {
@@ -277,10 +301,14 @@ export class AutomationService {
                         }
                     } catch (error: any) {
                         attempts++;
+                        // Enhanced Error Logging
+                        console.error(`[Worker ${account.id}] Error Details:`, error);
+                        this.log(`❌ [Worker ${account.id}] Scene ${scene.sceneNumber} Error: ${error.message}`);
+
                         if (attempts > this.config.maxRetries) {
-                            this.log(`❌ [Worker ${account.id}] Scene ${scene.sceneNumber} Failed: ${error.message}`);
+                            this.log(`❌ [Worker ${account.id}] Scene ${scene.sceneNumber} FAILED after ${attempts} attempts.`);
                             stats.failed++;
-                            stats.pending--; // Remove from pending even if failed
+                            stats.pending--;
                             this.onProgress({
                                 ...stats,
                                 updatedScene: {
@@ -290,9 +318,9 @@ export class AutomationService {
                                 }
                             });
                             this.onWorkerUpdate({ id: account.id, status: 'error', currentScene: scene.sceneNumber });
-                            this.onError(`Scene ${scene.sceneNumber} failed`);
+                            this.onError(`Scene ${scene.sceneNumber} failed: ${error.message}`);
                         } else {
-                            this.log(`⚠️ [Worker ${account.id}] Error: ${error.message}. Retrying...`);
+                            this.log(`⚠️ [Worker ${account.id}] Retrying (${attempts}/${this.config.maxRetries})...`);
                             this.onWorkerUpdate({ id: account.id, status: 'retrying', currentScene: scene.sceneNumber });
                             await new Promise(r => setTimeout(r, 5000));
                         }
@@ -310,10 +338,13 @@ export class AutomationService {
     }
 
     async runAutomation(account: WorkerAccount, scene: Scene, imagePath: string): Promise<string> {
-        // Get script path
+        // Get script path (Using CJS now)
         const scriptPath = app.isPackaged
-            ? path.join(process.resourcesPath, 'grok-automation.js')
+            ? path.join(process.resourcesPath, 'grok-automation.cjs')
             : path.join(__dirname, '../../src/main/resources/grok-automation.js');
+
+        console.log(`[AutomationService] Resolved script path: ${scriptPath}`);
+        console.log(`[AutomationService] Exists? ${require('fs').existsSync(scriptPath)}`);
 
         // Temp config
         const tempConfig = {
@@ -336,12 +367,36 @@ export class AutomationService {
             fs.writeFileSync(tempConfigPath, JSON.stringify(tempConfig, null, 2));
 
             return new Promise((resolve, reject) => {
-                const proc = spawn('node', [
+                const nodeExecutable = process.execPath;
+                const nodeArgs = [
                     scriptPath,
                     tempConfigPath,
                     '--port', account.port.toString(),
                     '--download-dir', tempDownloadDir
-                ], { stdio: 'pipe' }); // Changed to pipe to capture output
+                ];
+
+                // When running in production/packaged mode, we use the Electron executable as Node
+                // via ELECTRON_RUN_AS_NODE=1. This allows it to require modules from app.asar.
+                // In dev mode, we can default to 'node' or still use Electron.
+                // Using process.execPath works for both if configured, but 'node' is simpler for dev.
+                // Note: process.execPath in dev points to electron.exe in node_modules.
+
+                // CRITICAL FIX: allow script to find node_modules inside app.asar
+                const appAsarPath = path.join(process.resourcesPath, 'app.asar');
+                const nodeModulesPath = path.join(appAsarPath, 'node_modules');
+
+                const env = {
+                    ...process.env,
+                    ELECTRON_RUN_AS_NODE: '1',
+                    NODE_PATH: nodeModulesPath // Helper for require() to look inside asar
+                };
+
+                console.log(`[AutomationService] NODE_PATH set to: ${nodeModulesPath}`);
+
+                const proc = spawn(nodeExecutable, nodeArgs, {
+                    stdio: 'pipe',
+                    env: env
+                });
 
                 proc.stdout?.on('data', (data) => {
                     const lines = data.toString().split('\n');
@@ -435,5 +490,6 @@ export class AutomationService {
     cleanup() {
         this.log('🧹 Cleaning up processes...');
         this.chromeProcesses.forEach(p => p.kill());
+        this.chromeProcesses = []; // Clear the array so we know they are dead
     }
 }

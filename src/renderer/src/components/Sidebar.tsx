@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { LayoutGrid, Clapperboard, Settings, Wifi, LogOut, ChevronsLeft, ChevronsRight, FolderOpen, Terminal } from 'lucide-react';
+import { useState } from 'react';
+import { LayoutGrid, Clapperboard, Settings, Wifi, ChevronsLeft, ChevronsRight, Terminal } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 // View State Types

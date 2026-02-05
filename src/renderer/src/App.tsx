@@ -47,6 +47,7 @@ function App() {
 
   // State for collapsible logs
   const [isLogsOpen, setIsLogsOpen] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   // Persistence: Load settings on mount
   useEffect(() => {
@@ -68,25 +69,29 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to load settings', e);
+    } finally {
+      setIsLoaded(true);
     }
   }, []);
 
   // Persistence: Save config on change
   useEffect(() => {
+    if (!isLoaded) return;
     localStorage.setItem('grok_config', JSON.stringify({
       duration: state.config.duration,
       resolution: state.config.resolution,
       maxConcurrent: state.config.maxConcurrent
     }));
-  }, [state.config.duration, state.config.resolution, state.config.maxConcurrent]);
+  }, [state.config.duration, state.config.resolution, state.config.maxConcurrent, isLoaded]);
 
   // Persistence: Save paths on change
   useEffect(() => {
+    if (!isLoaded) return;
     localStorage.setItem('grok_paths', JSON.stringify({
       projectPath: state.projectPath,
       accountsPath: state.accountsPath
     }));
-  }, [state.projectPath, state.accountsPath]);
+  }, [state.projectPath, state.accountsPath, isLoaded]);
 
   // Setup Listeners
   useEffect(() => {
@@ -180,6 +185,73 @@ function App() {
     setState(prev => ({ ...prev, isRunning: false, logs: [...prev.logs, '🛑 Stopped by user'] }));
   };
 
+  const handleUpdatePrompt = async (scene: any, newPrompt: string) => {
+    try {
+      const success = await window.api.automation.updatePrompt(state.projectPath, scene.sceneNumber, newPrompt);
+      if (success) {
+        // Reload project to reflect changes
+        const { scenes } = await window.api.automation.scanProject(state.projectPath) as any;
+        setState(prev => ({
+          ...prev,
+          scenes: scenes.map((s: any) => {
+            // Preserve status of existing scenes
+            const existing = prev.scenes.find(os => os.sceneNumber === s.sceneNumber);
+            return existing ? { ...s, status: existing.status, videoPath: existing.videoPath } : { ...s, status: 'pending' };
+          }),
+          logs: [...prev.logs, `✅ Updated prompt for Scene ${scene.sceneNumber}`]
+        }));
+      } else {
+        setState(prev => ({ ...prev, logs: [...prev.logs, `❌ Failed to update prompt for Scene ${scene.sceneNumber}`] }));
+      }
+    } catch (e: any) {
+      setState(prev => ({ ...prev, logs: [...prev.logs, `❌ Error: ${e.message}`] }));
+    }
+  };
+
+  const handleRetry = async (scene: any) => {
+    if (!state.projectPath || !state.accountsPath) return; // Should be set
+
+    // Reset status for this scene
+    setState(prev => ({
+      ...prev,
+      isRunning: true,
+      scenes: prev.scenes.map(s => s.sceneNumber === scene.sceneNumber ? { ...s, status: 'pending', error: undefined } : s)
+    }));
+
+    try {
+      // Get images path again (hacky, ideally store it)
+      // Get images path again (hacky, ideally store it)
+      // actually better to rely on scanProject or store it in state. 
+      // stored in state? No. 
+      // Let's re-use logic from handleStart or just assume standard structure.
+      // standard structure: project/image
+
+      const { scriptPath, imagesPath: validImagesPath } = await window.api.automation.scanProject(state.projectPath) as any;
+
+      await window.api.automation.retry(scriptPath, validImagesPath, [scene.sceneNumber]);
+    } catch (e: any) {
+      setState(prev => ({ ...prev, isRunning: false, logs: [...prev.logs, `❌ Retry Error: ${e.message}`] }));
+    }
+  };
+
+  const handleRetryFailed = async () => {
+    const failedScenes = state.scenes.filter(s => s.status === 'failed').map(s => s.sceneNumber);
+    if (failedScenes.length === 0) return;
+
+    setState(prev => ({
+      ...prev,
+      isRunning: true,
+      scenes: prev.scenes.map(s => failedScenes.includes(s.sceneNumber) ? { ...s, status: 'pending', error: undefined } : s)
+    }));
+
+    try {
+      const { scriptPath, imagesPath } = await window.api.automation.scanProject(state.projectPath) as any;
+      await window.api.automation.retry(scriptPath, imagesPath, failedScenes);
+    } catch (e: any) {
+      setState(prev => ({ ...prev, isRunning: false, logs: [...prev.logs, `❌ Retry Error: ${e.message}`] }));
+    }
+  };
+
   return (
     <MainLayout currentView={currentView} onViewChange={setCurrentView}>
       <div className="flex h-full gap-6 max-w-[98vw] mx-auto overflow-hidden">
@@ -221,9 +293,20 @@ function App() {
               <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Pending</span>
               <span className="text-xl font-mono text-amber-400 leading-none">{state.stats.pending}</span>
             </div>
-            <div className="flex-1 px-4 py-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md flex items-center justify-between">
+            <div className="flex-1 px-4 py-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md flex items-center justify-between group relative">
               <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Failed</span>
-              <span className="text-xl font-mono text-red-400 leading-none">{state.stats.failed}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-mono text-red-400 leading-none">{state.stats.failed}</span>
+                {state.stats.failed > 0 && !state.isRunning && (
+                  <button
+                    onClick={handleRetryFailed}
+                    className="p-1 rounded bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-colors"
+                    title="Retry All Failed"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -234,13 +317,16 @@ function App() {
               workers={state.workers}
               stats={state.stats}
               className="flex-1 min-h-0"
+              onEdit={handleUpdatePrompt}
+              onRetry={handleRetry}
             />
           </div>
 
           {/* Log Terminal (Collapsible) */}
-          <div className={`flex-shrink-0 transition-all duration-300 ease-in-out border border-white/10 rounded-xl bg-black/30 overflow-hidden ${isLogsOpen ? 'h-[200px]' : 'h-[36px]'}`}>
+          {/* Log Terminal (Collapsible) - Expanded Height increased to 600px */}
+          <div className={`flex-shrink-0 transition-all duration-300 ease-in-out border border-white/10 rounded-xl bg-black/30 overflow-hidden flex flex-col ${isLogsOpen ? 'h-[600px]' : 'h-[36px]'}`}>
             <div
-              className="h-[36px] px-4 flex items-center justify-between cursor-pointer hover:bg-white/5"
+              className="h-[36px] flex-shrink-0 px-4 flex items-center justify-between cursor-pointer hover:bg-white/5"
               onClick={() => setIsLogsOpen(!isLogsOpen)}
             >
               <span className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
@@ -251,7 +337,7 @@ function App() {
                 {isLogsOpen ? '▼' : '▲'}
               </button>
             </div>
-            <div className="h-[calc(200px-36px)]">
+            <div className="flex-1 min-h-0">
               <LogTerminal logs={state.logs} className="h-full border-t border-white/5" />
             </div>
           </div>

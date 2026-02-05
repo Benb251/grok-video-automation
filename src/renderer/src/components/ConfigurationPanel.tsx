@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { Play, StopCircle, Settings, Clock, Monitor, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
 

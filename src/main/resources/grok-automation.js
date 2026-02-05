@@ -3,8 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Conditionally define __filename/__dirname only if not already defined (ESM vs CJS compatibility)
+var __filename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
+var __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
 
 console.log('🚀 Starting Grok Video Generation Automation (CDP Mode)...\n');
 console.log('ℹ️ Script Version: NATIVE_DOM_CLICK_FIX');
