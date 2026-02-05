@@ -176,6 +176,16 @@ export class AutomationService {
 
                 this.log(`\n[Worker ${account.id}] Processing Scene ${scene.sceneNumber}...`);
                 this.onWorkerUpdate({ id: account.id, status: 'working', currentScene: scene.sceneNumber });
+
+                // Notify scene started
+                this.onProgress({
+                    ...stats,
+                    updatedScene: {
+                        sceneNumber: scene.sceneNumber,
+                        status: 'generating',
+                        workerId: account.id
+                    }
+                });
                 this.log(`🍪 [Worker ${account.id}] Using cookie file: ${path.basename(account.cookiePath)}`);
 
                 // Resolve image path
@@ -218,7 +228,14 @@ export class AutomationService {
                         if (videoPath) {
                             stats.completed++;
                             stats.pending--;
-                            this.onProgress({ ...stats });
+                            this.onProgress({
+                                ...stats,
+                                updatedScene: {
+                                    sceneNumber: scene.sceneNumber,
+                                    status: 'completed',
+                                    videoPath: videoPath
+                                }
+                            });
                             this.log(`✅ [Worker ${account.id}] Scene ${scene.sceneNumber} Complete`);
                             this.log(`   Saved to: ${videoPath}`);
                             this.onWorkerUpdate({ id: account.id, status: 'idle', currentScene: null }); // Idle after done
@@ -232,7 +249,14 @@ export class AutomationService {
                             this.log(`❌ [Worker ${account.id}] Scene ${scene.sceneNumber} Failed: ${error.message}`);
                             stats.failed++;
                             stats.pending--; // Remove from pending even if failed
-                            this.onProgress({ ...stats });
+                            this.onProgress({
+                                ...stats,
+                                updatedScene: {
+                                    sceneNumber: scene.sceneNumber,
+                                    status: 'failed',
+                                    error: error.message
+                                }
+                            });
                             this.onWorkerUpdate({ id: account.id, status: 'error', currentScene: scene.sceneNumber });
                             this.onError(`Scene ${scene.sceneNumber} failed`);
                         } else {

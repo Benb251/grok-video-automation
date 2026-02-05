@@ -24,6 +24,7 @@ interface DashboardState {
     failed: number;
   }
   workers: any[];
+  scenes: any[];
 }
 
 function App() {
@@ -40,7 +41,8 @@ function App() {
       maxConcurrent: 2
     },
     stats: { total: 0, completed: 0, pending: 0, failed: 0 },
-    workers: []
+    workers: [],
+    scenes: []
   });
 
   // Setup Listeners
@@ -50,7 +52,20 @@ function App() {
     });
 
     window.api.automation.onProgress((data) => {
-      setState(prev => ({ ...prev, stats: data }));
+      setState(prev => {
+        let newScenes = [...prev.scenes];
+
+        // Update specific scene if provided in data
+        if (data.updatedScene) {
+          newScenes = newScenes.map(s =>
+            s.sceneNumber === data.updatedScene.sceneNumber
+              ? { ...s, ...data.updatedScene }
+              : s
+          );
+        }
+
+        return { ...prev, stats: data, scenes: newScenes };
+      });
     });
 
     window.api.automation.onWorkerUpdate((data) => {
@@ -88,8 +103,19 @@ function App() {
 
     try {
       // 1. Scan Project
-      const { scriptPath, imagesPath } = await window.api.automation.scanProject(state.projectPath);
-      setState(prev => ({ ...prev, logs: [...prev.logs, `✅ Script: ${scriptPath.split('\\').pop()}`, `✅ Images: ${imagesPath.split('\\').pop()}`] }));
+      const { scriptPath, imagesPath, scenes } = await window.api.automation.scanProject(state.projectPath) as any;
+
+      // Initialize scenes with default status
+      const initialScenes = scenes.map((s: any) => ({
+        ...s,
+        status: 'pending' // Default status
+      }));
+
+      setState(prev => ({
+        ...prev,
+        scenes: initialScenes,
+        logs: [...prev.logs, `✅ Script: ${scriptPath.split('\\').pop()}`, `✅ Images: ${imagesPath.split('\\').pop()}`, `✅ Loaded ${scenes.length} scenes`]
+      }));
 
       // 2. Init Service
       await window.api.automation.init(state.accountsPath, {
@@ -113,7 +139,7 @@ function App() {
 
   return (
     <MainLayout currentView={currentView} onViewChange={setCurrentView}>
-      <div className="flex h-full gap-6 max-w-[1600px] mx-auto">
+      <div className="flex h-full gap-6 max-w-[98vw] mx-auto">
 
         {/* LEFT COLUMN: Settings & Controls (350px fixed or 25%) */}
         <div className="w-[350px] flex-shrink-0 flex flex-col">
@@ -166,7 +192,7 @@ function App() {
           {/* Storyboard / Worker Grid */}
           <div className="flex-1 bg-black/20 backdrop-blur-md rounded-2xl border border-white/10 p-6 shadow-xl overflow-hidden flex flex-col">
             <Storyboard
-              scenes={[]}
+              scenes={state.scenes}
               workers={state.workers}
               stats={state.stats}
               className="flex-1"

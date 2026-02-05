@@ -1,7 +1,9 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
 import { join } from 'path'
 import icon from '../../resources/icon.png?asset'
+
 import { AutomationService } from './services/AutomationService'
+import { parseScriptFile } from './services/ScriptParser'
 
 // Inline implementation to avoid @electron-toolkit/utils initialization bug
 const isDev = !app.isPackaged
@@ -40,12 +42,45 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
+// Register custom protocol privileges MUST be done before app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { secure: true, standard: true, supportFetchAPI: true, bypassCSP: true, stream: true } }
+])
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
   app.setAppUserModelId('com.grok-desktop')
+
+  // Register 'media' protocol for local file access (Robust checking)
+  protocol.registerFileProtocol('media', (request, callback) => {
+    try {
+      // Decode URL to handle spaces and special chars
+      // request.url comes in as media://... or media:///...
+
+      const urlObj = new URL(request.url);
+      let filePath = decodeURIComponent(urlObj.pathname);
+
+      // Handle drive letter as hostname (e.g. media://c/Windows/...)
+      // This happens if Chrome parses media://d/path where 'd' is host
+      if (process.platform === 'win32' && urlObj.hostname && /^[a-zA-Z]$/.test(urlObj.hostname)) {
+        filePath = `${urlObj.hostname}:${filePath}`;
+      }
+      // Handle drive letter in pathname (e.g. media:///C:/Windows/... or /C:/...)
+      else if (process.platform === 'win32' && filePath.startsWith('/') && /^[a-zA-Z]:/.test(filePath.slice(1))) {
+        filePath = filePath.slice(1);
+      }
+
+      console.log(`[Media Protocol] Request: ${request.url} -> FilePath: ${filePath}`);
+      // Callback with object { path: ... } is strict for registerFileProtocol
+      return callback({ path: filePath });
+
+    } catch (error) {
+      console.error('[Media Protocol] Error:', error);
+    }
+  });
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -97,9 +132,32 @@ app.whenReady().then(() => {
     const imagesPath = path.join(projectPath, 'image');
     if (!fs.existsSync(imagesPath)) throw new Error("'image' folder not found in project folder");
 
+    const fullScriptPath = path.join(projectPath, scriptFile);
+    let scenes = parseScriptFile(fullScriptPath);
+
+    // Map images to scenes
+    try {
+      const imageFiles = fs.readdirSync(imagesPath);
+      scenes = scenes.map(scene => {
+        // Look for image matching scene number (e.g. "1.png", "Scene 1.png")
+        const match = imageFiles.find(f => {
+          const num = f.match(/\d+/);
+          return num && parseInt(num[0]) === scene.sceneNumber;
+        });
+
+        return {
+          ...scene,
+          imagePath: match ? path.join(imagesPath, match) : undefined
+        };
+      });
+    } catch (e) {
+      console.error('Error mapping images:', e);
+    }
+
     return {
-      scriptPath: path.join(projectPath, scriptFile),
-      imagesPath: imagesPath
+      scriptPath: fullScriptPath,
+      imagesPath: imagesPath,
+      scenes: scenes
     };
   });
 
@@ -140,6 +198,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
