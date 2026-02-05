@@ -94,7 +94,9 @@ function App() {
       // 2. Init Service
       await window.api.automation.init(state.accountsPath, {
         maxConcurrent: state.config.maxConcurrent,
-        outputFolder: state.projectPath
+        outputFolder: state.projectPath,
+        duration: state.config.duration,
+        resolution: state.config.resolution
       });
 
       // 3. Start

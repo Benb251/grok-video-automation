@@ -9,6 +9,8 @@ interface AutomationConfig {
     maxConcurrent: number;
     maxRetries: number;
     outputFolder: string;
+    duration: string;
+    resolution: string;
 }
 
 interface WorkerAccount {
@@ -47,6 +49,8 @@ export class AutomationService {
             maxConcurrent: 0,
             maxRetries: 2,
             outputFolder: '',
+            duration: '6s',
+            resolution: '720p',
             ...config
         };
         this.onLog = callbacks.onLog;
@@ -197,9 +201,12 @@ export class AutomationService {
 
                     try {
                         const tempDownloadDir = await this.runAutomation(account, scene, imagePath);
+                        this.log(`   📂 runAutomation returned: ${tempDownloadDir}`);
 
                         // Move from temp to project "video" folder
+                        this.log(`   🔄 Calling findAndMoveVideo...`);
                         const videoPath = this.findAndMoveVideo(scene.sceneNumber, this.config.outputFolder, tempDownloadDir);
+                        this.log(`   📂 findAndMoveVideo returned: ${videoPath}`);
 
                         // Cleanup
                         try {
@@ -258,8 +265,8 @@ export class AutomationService {
             imagePath: imagePath,
             cookiePath: account.cookiePath,
             aspectRatio: '16:9',
-            duration: '6s',
-            resolution: '720p'
+            duration: this.config.duration || '6s',
+            resolution: this.config.resolution || '720p'
         };
 
         const tempDir = app.getPath('userData');
@@ -326,9 +333,16 @@ export class AutomationService {
     }
 
     findAndMoveVideo(sceneNumber: number, outputFolder: string, sourceFolder: string): string | null {
-        if (!fs.existsSync(sourceFolder)) return null;
+        this.log(`   📦 Moving video: source=${sourceFolder}, output=${outputFolder}`);
+
+        if (!fs.existsSync(sourceFolder)) {
+            this.log(`   ⚠️ Source folder not found: ${sourceFolder}`);
+            return null;
+        }
 
         const files = fs.readdirSync(sourceFolder).filter(f => f.endsWith('.mp4'));
+        this.log(`   📋 Found ${files.length} mp4 files: ${files.join(', ')}`);
+
         if (files.length === 0) return null;
 
         const video = files[0]; // Should only be one
@@ -337,14 +351,19 @@ export class AutomationService {
         // Use "video" folder (Singular to match user structure)
         const targetDir = path.join(outputFolder, 'video');
 
-        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+        if (!fs.existsSync(targetDir)) {
+            this.log(`   📁 Creating target folder: ${targetDir}`);
+            fs.mkdirSync(targetDir, { recursive: true });
+        }
 
         const sourcePath = path.join(sourceFolder, video);
         const targetPath = path.join(targetDir, newName);
+        this.log(`   📥 Copying: ${sourcePath} -> ${targetPath}`);
 
         try {
             // If exists, overwrite or rename? Let's overwrite for now to be simple
             fs.copyFileSync(sourcePath, targetPath);
+            this.log(`   ✅ Video copied successfully!`);
             return targetPath;
         } catch (e) {
             this.log(`❌ Error moving video: ${e}`);

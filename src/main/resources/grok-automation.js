@@ -142,25 +142,28 @@ async function main() {
         });
 
         // Navigate to Grok Imagine base page for batch processing
-        // CRITICAL: Must reset to /imagine (not /imagine/post/xxx) for each new scene
+        // CRITICAL: ALWAYS reset to /imagine (not /imagine/post/xxx) for each new scene
         const currentUrl = page.url();
-        const isOnBaseImagine = currentUrl === 'https://grok.com/imagine' || currentUrl === 'https://grok.com/imagine/';
+        console.log(`📍 Current page: ${currentUrl}`);
 
-        if (!isOnBaseImagine) {
-            console.log(`📍 Navigating to https://grok.com/imagine...`);
-            console.log(`   (Current page: ${currentUrl})`);
-            await page.goto('https://grok.com/imagine', { waitUntil: 'domcontentloaded' });
-            console.log('⏳ Waiting for UI to load...');
-            await page.waitForTimeout(3000); // Wait for initialization
-        } else {
-            console.log(`✅ Already on Grok Imagine base page`);
-            await page.waitForTimeout(1000); // Small wait for stability
-        }
+        // FORCE navigate to base /imagine even if already there - ensures fresh state
+        console.log(`📍 Navigating to https://grok.com/imagine...`);
+        await page.goto('https://grok.com/imagine', { waitUntil: 'domcontentloaded' });
+        console.log('⏳ Waiting for UI to load...');
+        await page.waitForTimeout(3000); // Wait for initialization
 
         // VERIFY LOGIN STATUS
         console.log('🔄 Reloading page to apply cookies...');
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(2000);
+
+        // Check if Grok redirected back to /post/* after reload
+        const urlAfterReload = page.url();
+        if (urlAfterReload.includes('/imagine/post/')) {
+            console.log(`⚠️ Grok redirected to ${urlAfterReload}, forcing back to /imagine...`);
+            await page.goto('https://grok.com/imagine', { waitUntil: 'domcontentloaded' });
+            await page.waitForTimeout(2000);
+        }
 
         const isLoggedOut = await page.locator('button:has-text("Sign in")').count() > 0 ||
             await page.locator('a[href="/signin"]').count() > 0;
@@ -188,13 +191,85 @@ async function main() {
             console.log('🖼️ Mode: Image-to-Video detected');
             console.log(`📤 Uploading image: ${CONFIG.videoConfig.imagePath}`);
 
-            // 1. Upload image directly using hidden file input (no dialog)
-            console.log('📁 Setting file directly to input[type="file"]...');
+            // Take debug screenshot BEFORE attempting upload
+            const uploadDebugPath = path.join(CONFIG.downloadDir, 'debug_before_upload.png');
+            await page.screenshot({ path: uploadDebugPath });
+            console.log(`📸 Debug screenshot: ${uploadDebugPath}`);
 
+            // Strategy 1: Try direct input[type="file"] first (hidden input, most reliable)
+            let uploadSuccess = false;
             const fileInput = page.locator('input[type="file"]').first();
-            await fileInput.waitFor({ state: 'attached', timeout: 10000 });
-            await fileInput.setInputFiles(CONFIG.videoConfig.imagePath);
-            console.log('✅ File set directly to input element');
+
+            try {
+                const inputExists = await fileInput.count() > 0;
+                if (inputExists) {
+                    console.log('📁 Strategy 1: Setting file to input[type="file"]...');
+                    await fileInput.setInputFiles(CONFIG.videoConfig.imagePath);
+                    console.log('✅ File set directly to input element');
+                    uploadSuccess = true;
+                }
+            } catch (e) {
+                console.log(`   ⚠️ Strategy 1 failed: ${e.message}`);
+            }
+
+            // Strategy 2: Click attach button → file chooser
+            if (!uploadSuccess) {
+                console.log('📁 Strategy 2: Click Attach button...');
+                try {
+                    // Try multiple selectors for attach button
+                    const attachBtn = page.locator('button[aria-label="Attach files"], button[aria-label="Attach"], button[aria-label="Đính kèm tệp"], button[aria-label="Đính kèm"], button:has(svg)').filter({ has: page.locator('svg') }).first();
+
+                    if (await attachBtn.isVisible({ timeout: 3000 })) {
+                        await attachBtn.click();
+                        await page.waitForTimeout(1500);
+
+                        // Click "Upload a file" option
+                        const uploadOption = page.locator('div[role="menuitem"], button').filter({ hasText: /Upload|Tải|tệp/i }).first();
+                        const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 5000 });
+                        await uploadOption.click();
+                        const fileChooser = await fileChooserPromise;
+                        await fileChooser.setFiles(CONFIG.videoConfig.imagePath);
+                        console.log('✅ File selected via file chooser');
+                        uploadSuccess = true;
+                    }
+                } catch (e) {
+                    console.log(`   ⚠️ Strategy 2 failed: ${e.message}`);
+                }
+            }
+
+            // Strategy 3: Look for any clickable paperclip/plus icon
+            if (!uploadSuccess) {
+                console.log('📁 Strategy 3: Looking for paperclip/plus icon...');
+                try {
+                    // Find first button with SVG that's near the input area
+                    const iconBtn = page.locator('button svg').first().locator('xpath=..');
+                    if (await iconBtn.isVisible({ timeout: 2000 })) {
+                        const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 5000 });
+                        await iconBtn.click();
+                        await page.waitForTimeout(1000);
+
+                        // Check if menu appeared, if so click upload option
+                        const menuItem = page.locator('[role="menuitem"]').first();
+                        if (await menuItem.isVisible({ timeout: 1000 })) {
+                            await menuItem.click();
+                        }
+
+                        const fileChooser = await fileChooserPromise;
+                        await fileChooser.setFiles(CONFIG.videoConfig.imagePath);
+                        console.log('✅ File selected via icon click');
+                        uploadSuccess = true;
+                    }
+                } catch (e) {
+                    console.log(`   ⚠️ Strategy 3 failed: ${e.message}`);
+                }
+            }
+
+            if (!uploadSuccess) {
+                const errorScreenshot = path.join(CONFIG.downloadDir, 'upload_failed.png');
+                await page.screenshot({ path: errorScreenshot });
+                console.error(`❌ All upload strategies failed. Screenshot: ${errorScreenshot}`);
+                throw new Error('Failed to upload image - no upload method worked');
+            }
 
             // 2. Wait for upload to complete and URL to change to /post/*
             console.log('⏳ Waiting for image upload and page transition...');
@@ -220,116 +295,79 @@ async function main() {
             }
 
             // ==========================================
-            // STEP 5: CONFIGURE VIDEO OPTIONS (Settings BEFORE Prompt)
+            // STEP 5: CONFIGURE VIDEO OPTIONS (Using Fetch project's working approach)
             // ==========================================
             console.log('⚙️ Configuring Video Options...');
 
+            // VERIFIED: Image-to-Video uses "Video Options" / "Tùy chọn Video"
+            const optionsBtn = page.locator('button[aria-label="Video Options"], button[aria-label="Tùy chọn Video"]').first();
+
             try {
-                // 1. Open "Video Options" / "Tùy chọn video"
-                // The icon button is in the same toolbar as "Tạo video" button
-                // Strategy: Find the submit button, then get its sibling (the options icon)
-                const submitBtn = page.locator('button:has-text("Tạo video"), button:has-text("Make video")').first();
+                // Wait for button to be ready
+                await optionsBtn.waitFor({ state: 'visible', timeout: 5000 });
+                console.log('   Found Video Options button, clicking...');
+                await optionsBtn.click();
 
-                // The options button is the button immediately before submit in the toolbar
-                // Using parent container to scope correctly
-                const toolbar = submitBtn.locator('xpath=..');
-                let optionsBtn = toolbar.locator('button').filter({ hasNot: page.locator('text=Tạo video'), has: page.locator('svg') }).first();
+                // CRITICAL: Wait longer for popover menu to fully render
+                await page.waitForTimeout(1500);
 
-                // Fallback: Get button by position (second-to-last button in parent)
-                if (!await optionsBtn.isVisible({ timeout: 2000 })) {
-                    console.log('   ℹ️ Sibling strategy failed, trying position-based...');
-                    // The toolbar has structure: [input] [options-btn] [submit-btn] [other-icons]
-                    // Options is the button right before submit
-                    optionsBtn = submitBtn.locator('xpath=preceding-sibling::button[1]');
-                }
-
-                // Wait for button
-                console.log('   Waiting for Video Options button...');
-                if (await optionsBtn.isVisible({ timeout: 10000 })) {
-                    // DEBUG
-                    const btnText = await optionsBtn.innerText().catch(() => 'No text');
-                    const btnLabel = await optionsBtn.getAttribute('aria-label').catch(() => 'No label');
-                    console.log(`   🔎 Found button - Text: "${btnText}", Label: "${btnLabel}"`);
-
-                    // Use NORMAL click (not evaluate) to trigger proper events
-                    await optionsBtn.click({ timeout: 5000 });
-                    await page.waitForTimeout(1500);
-
-                    // VERIFY MENU OPENED
-                    const menuHeader = page.locator('text=Duration').or(page.locator('text=Thời lượng'));
-                    if (!await menuHeader.isVisible({ timeout: 2000 })) {
-                        console.log('   ⚠️ Menu not detected, trying click again...');
-                        await optionsBtn.click({ force: true });
-                        await page.waitForTimeout(1500);
+                // Duration - using aria-label for precise targeting
+                const duration = CONFIG.videoConfig.duration;
+                try {
+                    const durationBtn = page.locator(`button[aria-label="${duration}"]`);
+                    if (await durationBtn.isVisible({ timeout: 2000 })) {
+                        await durationBtn.click();
+                        console.log(`   ✅ Set Duration: ${duration}`);
+                        await page.waitForTimeout(500);
+                    } else {
+                        console.log(`   ⚠️ Duration aria-label not found, trying text selector...`);
+                        const durationText = page.getByRole('button').filter({ hasText: duration });
+                        await durationText.click({ timeout: 2000 });
+                        console.log(`   ✅ Set Duration (text): ${duration}`);
                     }
+                } catch (e) { console.log(`   ⚠️ Failed to set duration: ${e.message}`); }
 
-                    // Helper to robustly find and click an option in the menu
-                    const selectOption = async (settingName, value) => {
-                        console.log(`   👉 Setting ${settingName} to ${value}...`);
-                        try {
-                            // Grok uses non-standard menu items - try multiple selectors
-                            // Scope to elements likely within the popup menu (last button, span, div with exact match)
-                            const exactTextLocator = page.locator(`text="${value}"`).last();
+                // IMPORTANT: Menu auto-closes after clicking duration
+                // Need to reopen menu to select resolution
+                console.log('   🔄 Reopening menu for resolution selection...');
+                await page.waitForTimeout(800);
+                await optionsBtn.click();
+                await page.waitForTimeout(1500);
 
-                            if (await exactTextLocator.isVisible({ timeout: 1000 })) {
-                                await exactTextLocator.click({ force: true }); // Force click to bypass any micro-overlay
-                                console.log(`     ✅ Clicked ${value}`);
-                                return true;
-                            }
+                // Resolution - using multiple selector strategies
+                const resolution = CONFIG.videoConfig.resolution;
+                try {
+                    // Try aria-label first
+                    let resolutionSet = false;
+                    const resolutionBtn = page.locator(`button[aria-label="${resolution}"]`);
 
-                            // Fallback: Partial match for button/span
-                            const partialLocator = page.locator(`button:has-text("${value}"), span:has-text("${value}")`).last();
-                            if (await partialLocator.isVisible({ timeout: 500 })) {
-                                await partialLocator.click({ force: true });
-                                console.log(`     ✅ Clicked ${value} (partial)`);
-                                return true;
-                            }
-
-                            console.log(`     ⚠️ Could not find option: ${value}`);
-                            return false;
-                        } catch (e) {
-                            console.log(`     ⚠️ Error setting ${value}: ${e.message}`);
-                            return false;
-                        }
-                    };
-
-                    // 2. Set Duration
-                    await selectOption('Duration', CONFIG.videoConfig.duration);
-                    await page.waitForTimeout(500);
-
-                    // 3. Set Resolution
-                    // Menu likely closed after Duration selection - reopen it
-                    if (!await page.locator('text=Resolution').or(page.locator('text=Độ phân giải')).isVisible()) {
-                        console.log('   ℹ️ Menu closed, reopening for Resolution...');
-                        // Re-locate the options button (fresh reference)
-                        const submitBtnFresh = page.locator('button:has-text("Tạo video"), button:has-text("Make video")').first();
-                        const toolbarFresh = submitBtnFresh.locator('xpath=..');
-                        const optionsBtnFresh = toolbarFresh.locator('button').filter({ hasNot: page.locator('text=Tạo video'), has: page.locator('svg') }).first();
-
-                        if (await optionsBtnFresh.isVisible({ timeout: 2000 })) {
-                            await optionsBtnFresh.click({ timeout: 5000 });
-                            await page.waitForTimeout(1500);
+                    if (await resolutionBtn.count() > 0 && await resolutionBtn.first().isVisible({ timeout: 2000 })) {
+                        await resolutionBtn.first().click();
+                        console.log(`   ✅ Set Resolution: ${resolution}`);
+                        resolutionSet = true;
+                    } else {
+                        // Fallback: Try to find button containing text
+                        console.log(`   ⚠️ Resolution aria-label not found, trying text selector...`);
+                        const resolutionText = page.getByRole('button').filter({ hasText: resolution });
+                        if (await resolutionText.count() > 0) {
+                            await resolutionText.first().click({ timeout: 2000 });
+                            console.log(`   ✅ Set Resolution (text): ${resolution}`);
+                            resolutionSet = true;
                         }
                     }
-                    await selectOption('Resolution', CONFIG.videoConfig.resolution);
 
-                    // 4. Set Aspect Ratio (Text-to-Video only - In Img2Vid it's hidden or locked)
-                    const aspectMenuVisible = await page.locator('text=Aspect Ratio').or(page.locator('text=Tỉ lệ')).isVisible();
-                    if (aspectMenuVisible) {
-                        await selectOption('Aspect Ratio', CONFIG.videoConfig.aspectRatio);
+                    if (!resolutionSet) {
+                        console.log(`   ⚠️ Could not find Resolution button for ${resolution}`);
                     }
+                } catch (e) { console.log(`   ⚠️ Failed to set resolution: ${e.message}`); }
 
-                    console.log('   ✅ Video configuration complete.');
-
-                    // Close menu (Click outside - e.g. top left)
-                    await page.mouse.click(0, 0);
-
-                } else {
-                    console.log('   ⚠️ Video Options button not visible yet, skipping configuration.');
-                }
+                // NOTE: Aspect Ratio is NOT available in Image-to-Video mode
+                // The aspect ratio is determined by the uploaded image
+                console.log('   ✅ Video options configured.');
 
             } catch (e) {
-                console.log(`⚠️ Video options setup failed: ${e.message}`);
+                console.log(`⚠️ Video Options button not found or error occurred: ${e.message}`);
+                console.log('   Skipping video configuration.');
             }
 
             // ==========================================
@@ -513,97 +551,58 @@ async function main() {
         console.log('⏳ Waiting for video generation...');
 
         try {
-            // Wait for either a new video element OR the "Download" button to appear
-            // This covers both cases: auto-play video or finished state
-            const videoSelector = 'video';
-            const downloadBtnSelector = 'button[aria-label="Download"], button[aria-label="Tải xuống"]';
+            // Capture existing videos to ignore them
+            const existingVideos = await page.evaluate(() =>
+                Array.from(document.querySelectorAll('video')).map(v => v.src)
+            );
 
-            let foundVideo = false;
+            let videoSrc = null;
             let attempts = 0;
 
-            while (!foundVideo && attempts < CONFIG.polling.maxAttempts) {
+            while (!videoSrc && attempts < CONFIG.polling.maxAttempts) {
                 await page.waitForTimeout(CONFIG.polling.intervalMs);
                 process.stdout.write('.');
 
-                // Strategy: Try to click Download button normally.
-                // Overlay blocks clicks during generation -> timeout -> continue polling.
-                // When video done, overlay clears -> click succeeds -> download starts.
-                const downloadButtons = page.locator(downloadBtnSelector);
-                if (await downloadButtons.count() > 0) {
-                    const lastBtn = downloadButtons.last();
-
-                    try {
-                        // Short timeout click - will fail if overlay still blocking
-                        await lastBtn.click({ timeout: 1000 });
-
-                        // If click succeeded, video is done!
-                        console.log('\n🎉 Download button clicked! Video generation complete.');
-
-                        // Wait for download event
-                        const download = await page.waitForEvent('download', { timeout: 30000 }).catch(() => null);
-
-                        if (download) {
-                            const filename = `grok_video_${Date.now()}.mp4`;
-                            const savePath = path.join(CONFIG.downloadDir, filename);
-                            await download.saveAs(savePath);
-                            console.log(`✅ Video saved: ${savePath}`);
-                            foundVideo = true;
-                            break;
-                        } else {
-                            console.log('   ⚠️ No download event. Trying video source scraper...');
-
-                            // Fallback: Scrape video source
-                            const videoSrc = await page.evaluate(() => {
-                                const videos = Array.from(document.querySelectorAll('video'));
-                                const v = videos.pop();
-                                return v ? v.src : null;
-                            });
-
-                            if (videoSrc && (videoSrc.startsWith('http') || videoSrc.startsWith('blob:'))) {
-                                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                                const filename = `grok_video_${timestamp}.mp4`;
-                                const savePath = path.join(CONFIG.downloadDir, filename);
-
-                                if (videoSrc.startsWith('blob:')) {
-                                    const base64Data = await page.evaluate(async (url) => {
-                                        const blob = await fetch(url).then(r => r.blob());
-                                        return new Promise(resolve => {
-                                            const reader = new FileReader();
-                                            reader.onload = () => resolve(reader.result);
-                                            reader.readAsDataURL(blob);
-                                        });
-                                    }, videoSrc);
-                                    const data = base64Data.split(',')[1];
-                                    fs.writeFileSync(savePath, Buffer.from(data, 'base64'));
-                                } else {
-                                    await downloadVideo(page, videoSrc, filename);
-                                }
-                                console.log(`✅ Video saved via scraper: ${savePath}`);
-                                foundVideo = true;
-                                break;
-                            }
-                        }
-                    } catch (e) {
-                        // Click timeout = overlay still blocking = generation in progress
-                        // This is expected, continue polling
-                    }
-                }
+                // Look for NEW video with HTTP URL (not blob)
+                videoSrc = await page.evaluate((known) => {
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    const newVideo = videos.find(v =>
+                        v.src &&
+                        !v.src.startsWith('blob:') &&
+                        !known.includes(v.src)
+                    );
+                    return newVideo ? newVideo.src : null;
+                }, existingVideos);
 
                 attempts++;
             }
 
-            if (!foundVideo) {
-                console.error('\n❌ Timeout: Could not detect finished video or download button.');
-            } else {
-                // Success cleanup
-                console.log('\n🔒 Disconnecting from browser...');
-                await browser.disconnect();
-                console.log('✅ Disconnected successfully!');
-            }
+            console.log('\n');
 
+            if (videoSrc) {
+                console.log(`🎉 Video generated successfully!`);
+                console.log(`URL: ${videoSrc}\n`);
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const filename = `grok_video_${timestamp}.mp4`;
+
+                await downloadVideo(page, videoSrc, filename);
+
+                console.log('\n✅ Video download complete! Script finished successfully.');
+                process.exit(0); // Exit with success code so TypeScript can proceed
+            } else {
+                console.error('❌ Timeout: Video did not appear after polling');
+                const screenshotPath = path.join(__dirname, 'error_screenshot.png');
+                await page.screenshot({ path: screenshotPath });
+                console.log(`Screenshot saved: ${screenshotPath}`);
+                process.exit(1); // Exit with error code
+            }
         } catch (error) {
-            console.error('\n❌ Error during polling:', error.message);
-            throw error;
+            console.error('\n❌ Error during video polling:', error.message);
+            const screenshotPath = path.join(__dirname, 'error_screenshot.png');
+            await page.screenshot({ path: screenshotPath }).catch(() => { });
+            console.log(`Screenshot saved: ${screenshotPath}`);
+            throw error; // Re-throw to be caught by main try-catch
         }
 
     } catch (error) {
@@ -618,10 +617,9 @@ async function main() {
         }
         process.exit(1); // Ensure non-zero exit code on error
     } finally {
-        // Only log here if there was an error and browser is still open
-        if (browser && browser.isConnected()) {
-            console.log('\n⚠️ Process ended with error. Disconnecting...');
-            try { await browser.disconnect(); } catch (e) { }
+        // For CDP connection, browser stays running - just log completion
+        if (browser) {
+            console.log('\n✅ Process complete. Browser remains open.');
         } else {
             console.log('\n✅ Process complete.');
         }
